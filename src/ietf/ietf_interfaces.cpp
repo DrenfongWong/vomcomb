@@ -37,7 +37,8 @@ ietf_interface_enable_disable_cb(sr_session_ctx_t *session, const char *xpath,
     sr_val_t *old_val = NULL;
     sr_val_t *new_val = NULL;
     sr_xpath_ctx_t xpath_ctx = {0};
-    int rc = SR_ERR_OK, op_rc = SR_ERR_OK;
+    int rc = SR_ERR_OK;
+    VOM::rc_t op_rc = VOM::rc_t::OK;
 
     SRP_LOG_INF("In %s", __FUNCTION__);
 
@@ -69,16 +70,18 @@ ietf_interface_enable_disable_cb(sr_session_ctx_t *session, const char *xpath,
                                          VOM::interface::admin_state_t::UP);
                     try {
                         op_rc = VOM::OM::write("sthg", iface);
+                        cout << "Interface name is " << if_name << endl;
                     } catch (exception &exc) {
-                        cout << exc.what() << endl;
+                        cout << "AAAAAAAAAAAAAAAAAAAAArg" << exc.what() << endl;
                     }
                 } else {
+                    VOM::interface iface(if_name, VOM::interface::type_t::ETHERNET,
+                                         VOM::interface::admin_state_t::DOWN);
                     try {
-                        VOM::interface iface(if_name, VOM::interface::type_t::ETHERNET,
-                                             VOM::interface::admin_state_t::DOWN);
                         op_rc = VOM::OM::write("sthg", iface);
+                        cout << "Interface name is " << if_name << endl;
                     } catch (exception &exc) {
-                        cout << exc.what() << endl;
+                        cout << "OOOOOOOOOOOOOOOOuch" << exc.what() << endl;
                     }
                 }
 
@@ -86,23 +89,31 @@ ietf_interface_enable_disable_cb(sr_session_ctx_t *session, const char *xpath,
             }
             case SR_OP_DELETED:
             {
-                VOM::OM::remove("sthg");
+                VOM::OM::remove("sthg"); //TODO
                 break;
             }
             default:
                 break;
         }
         sr_xpath_recover(&xpath_ctx);
-        if (SR_ERR_INVAL_ARG == op_rc) {
-            sr_set_error(session, "Invalid interface name.",
-                         new_val ? new_val->xpath : old_val->xpath);
-        }
+
         sr_free_val(old_val);
         sr_free_val(new_val);
+
+        if (op_rc != VOM::rc_t::OK)
+            goto error;
     }
     sr_free_change_iter(iter);
 
-    return op_rc;
+    return SR_ERR_OK;
+
+error:
+    sr_free_change_iter(iter);
+    sr_set_error(session, "Invalid interface name.",
+                 new_val ? new_val->xpath : old_val->xpath);
+    cout << "Return code: " << op_rc << endl;
+
+    return SR_ERR_INVAL_ARG;
 }
 
 const xpath_t ietf_interfaces_xpaths[IETF_INTERFACES_SIZE] = {
