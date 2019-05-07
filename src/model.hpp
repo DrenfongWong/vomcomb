@@ -29,6 +29,15 @@
 #include <sysrepo/values.h>
 #include <sysrepo/plugins.h>
 
+/* Utils */
+#define UNUSED(x) (void)x
+
+#define foreach_change(ds, it, oper, old, new) \
+    while( (event != SR_EV_ABORT) && \
+            sr_get_change_next(ds, it, &oper, &old, &new) == SR_ERR_OK)
+
+/* Register models */
+
 typedef enum {
     MODULE,
     XPATH,
@@ -39,7 +48,7 @@ typedef enum {
 #define ARRAY_SIZE(X) (sizeof(X) / sizeof(X[0]))
 
 typedef struct _xpath_t {
-    char *xpath;
+    const char *xpath;
     method_e method;
     sr_datastore_t datastore;
     union {

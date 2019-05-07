@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <sys/socket.h>
 
-#include "../model.h"
+#include "../model.hpp"
+
+#include <vom/interface.hpp>
+
+using namespace std;
 
 /**
  * @brief Callback to be called by any config change under "/ietf-interfaces:interfaces-state/interface" path.
@@ -32,12 +36,12 @@ ietf_interface_enable_disable_cb(sr_session_ctx_t *session, const char *xpath,
     sr_change_oper_t op = SR_OP_CREATED;
     sr_val_t *old_val = NULL;
     sr_val_t *new_val = NULL;
-    sr_xpath_ctx_t xpath_ctx = { 0, };
+    sr_xpath_ctx_t xpath_ctx = {0};
     int rc = SR_ERR_OK, op_rc = SR_ERR_OK;
 
     SRP_LOG_INF("In %s", __FUNCTION__);
 
-    /* no-op for apply, we only care about SR_EV_ENABLED, SR_EV_VERIFY, SR_EV_ABORT */
+    /* no-op for apply, we only care about SR_EV_{ENABLED,VERIFY,ABORT} */
     if (SR_EV_APPLY == event)
         return SR_ERR_OK;
 
@@ -52,23 +56,46 @@ ietf_interface_enable_disable_cb(sr_session_ctx_t *session, const char *xpath,
     }
 
     foreach_change (session, iter, op, old_val, new_val) {
-
-        SRP_LOG_DBG("A change detected in '%s', op=%d", new_val ? new_val->xpath : old_val->xpath, op);
-        if_name = sr_xpath_key_value(new_val ? new_val->xpath : old_val->xpath, "interface", "name", &xpath_ctx);
+        SRP_LOG_DBG("A change detected in '%s', op=%d",
+                    new_val ? new_val->xpath : old_val->xpath, op);
+        if_name = sr_xpath_key_value(new_val ? new_val->xpath : old_val->xpath,
+                                     "interface", "name", &xpath_ctx);
         switch (op) {
             case SR_OP_CREATED:
             case SR_OP_MODIFIED:
-                op_rc = interface_enable(if_name, new_val->data.bool_val);
+            {
+                if (new_val->data.bool_val) { // iface up
+                    VOM::interface iface(if_name, VOM::interface::type_t::ETHERNET,
+                                         VOM::interface::admin_state_t::UP);
+                    try {
+                        op_rc = VOM::OM::write("sthg", iface);
+                    } catch (exception &exc) {
+                        cout << exc.what() << endl;
+                    }
+                } else {
+                    try {
+                        VOM::interface iface(if_name, VOM::interface::type_t::ETHERNET,
+                                             VOM::interface::admin_state_t::DOWN);
+                        op_rc = VOM::OM::write("sthg", iface);
+                    } catch (exception &exc) {
+                        cout << exc.what() << endl;
+                    }
+                }
+
                 break;
+            }
             case SR_OP_DELETED:
-                op_rc = interface_enable(if_name, false /* !enable */);
+            {
+                VOM::OM::remove("sthg");
                 break;
+            }
             default:
                 break;
         }
         sr_xpath_recover(&xpath_ctx);
         if (SR_ERR_INVAL_ARG == op_rc) {
-            sr_set_error(session, "Invalid interface name.", new_val ? new_val->xpath : old_val->xpath);
+            sr_set_error(session, "Invalid interface name.",
+                         new_val ? new_val->xpath : old_val->xpath);
         }
         sr_free_val(old_val);
         sr_free_val(new_val);
@@ -83,7 +110,9 @@ const xpath_t ietf_interfaces_xpaths[IETF_INTERFACES_SIZE] = {
         .xpath = "/ietf-interfaces:interfaces/interface",
         .method = XPATH,
         .datastore = SR_DS_RUNNING,
-        .cb.scb = ietf_interface_change_cb,
+        .cb = {
+            .scb = ietf_interface_change_cb,
+        },
         .private_ctx = NULL,
         .priority = 0,
         .opts = SR_SUBSCR_CTX_REUSE | SR_SUBSCR_EV_ENABLED
@@ -92,7 +121,9 @@ const xpath_t ietf_interfaces_xpaths[IETF_INTERFACES_SIZE] = {
         .xpath = "/ietf-interfaces:interfaces/interface/enabled",
         .method = XPATH,
         .datastore = SR_DS_RUNNING,
-        .cb.scb = ietf_interface_enable_disable_cb,
+        .cb = {
+            .scb = ietf_interface_enable_disable_cb,
+        },
         .private_ctx = NULL,
         .priority = 100,
         .opts = SR_SUBSCR_CTX_REUSE | SR_SUBSCR_EV_ENABLED
